@@ -1,0 +1,9 @@
+Lt. Condyle
+Rt. Condyle
+Lt. Ramus-Angle
+Rt. Ramus-Angle
+Lt. Body
+Rt. Body
+Lt. Coronoid
+Rt. Coronoid
+Symphysis-Parasymphysis

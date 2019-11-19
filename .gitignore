@@ -102,3 +102,13 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# environment
+.vscode
+.DS_Store
+
+# data
+/dataset/*
+!/dataset/.gitkeep
+!/dataset/data.csv
+!/dataset/classes.txt
