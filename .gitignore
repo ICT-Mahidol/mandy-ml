@@ -112,3 +112,5 @@ venv.bak/
 !/dataset/.gitkeep
 !/dataset/data.csv
 !/dataset/classes.txt
+/static/cases*
+!/static/cases/.gitkeep
