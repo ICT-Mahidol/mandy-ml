@@ -108,9 +108,9 @@ venv.bak/
 .DS_Store
 
 # data
-/dataset/*
-!/dataset/.gitkeep
-!/dataset/data.csv
-!/dataset/classes.txt
+# /dataset/*
+# !/dataset/.gitkeep
+# !/dataset/data.csv
+# !/dataset/classes.txt
 /static/cases*
 !/static/cases/.gitkeep
