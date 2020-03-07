@@ -74,11 +74,11 @@ def prediction(filepath):
     config = ConfigProto()
     config.gpu_options.allow_growth = True  
     sess = Session(config=config)
-    json_file = open(r'dataset/model/28022020-9class-1582868620.7299333.json', 'r')
+    json_file = open(r'dataset/model/06032020.json', 'r')
     loaded_model_json = json_file.read()
     json_file.close()
     model = tf.keras.models.model_from_json(loaded_model_json)
-    model.load_weights(r'dataset/model/28022020-9class-1582868620.7299333.h5')
+    model.load_weights(r'dataset/model/06032020.h5')
     # print(filepath)
     # for i in range(len(filepath)):
     prediction = []
@@ -98,10 +98,7 @@ def prediction(filepath):
         grad_pred.append(classes[top_3[i]])
     #print("\n")
     
-    top_9 = np.argsort(pred[0])[:-9:-1]
-
-   
-    #image_ID = cur.execute("SELECT Image_ID FROM image where filepath = filepath")
+    top_9 = np.argsort(pred[0])[:-10:-1]
     
     name = []
     prob = []
@@ -109,12 +106,6 @@ def prediction(filepath):
         
         name.append(classes[top_9[i]])
         prob.append(pred[0][top_9[i]])
-
-#image_ID = cur.execute("SELECT Image_ID FROM image where filepath = filepath")
-        #cur.execute("INSERT INTO percent (Image_ID,prediction, percentage) VALUES ('" + 
-		 #   str(image_ID) +  "', '" + 
-          #  str(name) +  "', '" + 
-           # str(prob)+"')")
    
         mysql.connection.commit()
         
@@ -137,7 +128,6 @@ def get_percent(caseId):
 def localization(filepath, outpath,grad_pred):
     IMAGE_PATH = filepath
     LAYER_NAME= 'Conv_1_bn'
-    print(grad_pred)
 
     for i in range(3):
 
@@ -161,25 +151,26 @@ def localization(filepath, outpath,grad_pred):
         elif grad_pred[i] == 'Symphysis-Parasymphysis':
             CLASS_INDEX = 8
     
-        print(CLASS_INDEX)
+        
     
-        json_file = open(r'dataset/model/28022020-9class-1582868620.7299333.json', 'r')
+        json_file = open(r'dataset/model/06032020.json', 'r')
         loaded_model_json = json_file.read()
         json_file.close()
         model = tf.keras.models.model_from_json(loaded_model_json)
-        model.load_weights(r'dataset/model/28022020-9class-1582868620.7299333.h5')
+        model.load_weights(r'dataset/model/06032020.h5')
 
         img = tf.keras.preprocessing.image.load_img(IMAGE_PATH, target_size=(512, 512))
         img = tf.keras.preprocessing.image.img_to_array(img)
 
-        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer(LAYER_NAME).output, model.output])
+        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer('Conv_1').output, model.output])
 
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(np.array([img]))
             loss = predictions[:, CLASS_INDEX]
- 
+
+
         output = conv_outputs[0]
-        grads = tape.gradient(loss, conv_outputs)[0]
+        grads =  tape.gradient(loss, conv_outputs)[0]
 
         gate_f = tf.cast(output > 0, 'float32')
         gate_r = tf.cast(grads > 0, 'float32')
@@ -189,27 +180,25 @@ def localization(filepath, outpath,grad_pred):
 
         cam = np.ones(output.shape[0: 2], dtype = np.float32)
 
-        @tf.function
-        def loop(weights):
-            for i, w in enumerate(weights):
-                cam += w * output[:, :, i]
+        for i, w in enumerate(weights):
+            cam += w * output[:, :, i]
 
-        cam = cv2.resize(cam, (512, 512))
+        cam = cv2.resize(cam.numpy(), (512, 512))
         cam = np.maximum(cam, 0)
-        r = (cam.max() - cam.min())
+        r = cam.max() - cam.min()
         if r == 0:
-            r = 1
+            r = 1;
         heatmap = (cam - cam.min()) / r
+      
         cam = cv2.applyColorMap(np.uint8(255*heatmap), cv2.COLORMAP_JET)
 
-        output_image = cv2.addWeighted(cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR), 0.8, cam, 1, 1)
+        output_image = cv2.addWeighted(cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR), 0.8, cam, 0.5, 0.5)
         output = cv2.resize(output_image, (1400,800))
         im_rgb = cv2.cvtColor(output , cv2.COLOR_RGB2BGR)
         cv2.imwrite(outpath, im_rgb)
+        #write three heatmap to server (three specific name)
+        
 
-    #status = "model is localizing"
-
-    #return status
     
 
 #@app.route('/users/upload_patient',methods=['POST'])
@@ -293,6 +282,8 @@ def upload_cases():
     
     filename = filename
     filepath = os.path.join(path, f'source{ext}')
+
+    #ควรทำเป็น3 path สำหรับ heatmap
     gradpath = os.path.join(path, f'heatmap{ext}')
 
     filepath_db = path+f'/source{ext}'
@@ -302,7 +293,7 @@ def upload_cases():
    
 
     res_prediction, res_name, res_prob,grad_pred = prediction(filepath)
-    print(res_name)
+    
     localization(filepath, gradpath,grad_pred)
    
    
@@ -348,10 +339,9 @@ def upload_cases():
             str(name) +  "', '" + 
             str(prob)+"')")
 
-    results = 'View result'
     mysql.connection.commit()
 
-   
+    results = {'Response':'Result', 'Progress': 100}
     # start running ML?
     return make_response(jsonify(results))
 
@@ -361,16 +351,10 @@ def get_predictioin(caseId):
     data = []
     cur = mysql.connection.cursor()
 
-    cur.execute("SELECT prediction FROM percent WHERE Image_ID = (%s)",[caseId])
-
+    cur.execute("SELECT * FROM percent WHERE Image_ID = (%s)",[caseId])
     for row in range(3):
         rv = cur.fetchone()
-        pred = rv['prediction']
-        data.append({'value': pred ,'viewValue':rv['prediction']})
-        
-       
-    # get data from database
-    #print(data)
+        data.append({'value': rv['prediction'] ,'viewValue':rv['prediction']})
     return make_response(jsonify(data), 200)
    
 
@@ -391,9 +375,7 @@ def get_cases():
 def get_gradcam(caseId):
     data = []
     arg1 = request.args['name'];
-    print(arg1)
-
-
+    
     if 'email' in session:
         email = session.get('email')
 
@@ -483,7 +465,3 @@ def status():
 if __name__ == '__main__':
     app.run(debug=True)
     app.secret_key = 'MANDY'
-    
-
-
-
