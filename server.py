@@ -66,8 +66,6 @@ CORS(app, supports_credentials=True)
 
 
 
-
-
 def prediction(filepath):
     data_path ='dataset'
     df = pd.read_csv(os.path.join(data_path, 'data.csv'))
@@ -86,17 +84,16 @@ def prediction(filepath):
     imagecur = imread(filepath)
     adjustimg = cv2.GaussianBlur(imagecur,(5,5),0)
     if len(adjustimg.shape) == 2:
-        adjustimg = np.tile(adjustimg[:, :, np.newaxis], 3)
+      adjustimg = np.tile(adjustimg[:, :, np.newaxis], 3)
+    
     preprocess = preprocess_input(resize(adjustimg, (512, 512)) * 255)
     pred=model.predict(preprocess[np.newaxis, :, :])
     top_3 = np.argsort(pred[0])[:-4:-1]
     classes = np.array(df.columns[1:])
     
     for i in range(3):
-        #print("{}".format(classes[top_3[i]])+" ({:.3})".format(pred[0][top_3[i]]))
         prediction.append("{}".format(classes[top_3[i]])+" ({:.3})".format(pred[0][top_3[i]]))
         grad_pred.append(classes[top_3[i]])
-    #print("\n")
     
     top_9 = np.argsort(pred[0])[:-10:-1]
     
@@ -107,48 +104,42 @@ def prediction(filepath):
         name.append(classes[top_9[i]])
         prob.append(pred[0][top_9[i]])
    
-        mysql.connection.commit()
-        
-    
     return prediction,name,prob,grad_pred
 
 
-@app.route('/users/get_percent/<caseId>', methods=['GET'])
-def get_percent(caseId):
-    data = []
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT prediction, percentage FROM percent WHERE Image_ID = (%s) ",[caseId])
-    for row in range(8):
-        rv = cur.fetchone()
-        data.append({'name': rv['prediction'] ,'value': float(rv['percentage'])*100})
-        
-    return make_response(jsonify(data), 200)
-
-
-def localization(filepath, outpath,grad_pred):
+def localization(filepath, outpath1, ext, grad_pred):
     IMAGE_PATH = filepath
-    LAYER_NAME= 'Conv_1_bn'
+    LAYER_NAME= 'bn'
+    data = []
 
-    for i in range(3):
-
-        #CLASS_INDEX = 0
+    for i in range(len(grad_pred)):
+     
         if grad_pred[i] == 'Lt. Condyle':
+            name = grad_pred[i]
             CLASS_INDEX = 0
         elif grad_pred[i] =='Rt. Condyle':
+            name = grad_pred[i]
             CLASS_INDEX = 1
         elif grad_pred[i] == 'Lt. Coronoid':
+            name = grad_pred[i]
             CLASS_INDEX = 6
         elif grad_pred[i] == 'Rt. Coronoid':
+            name = grad_pred[i]
             CLASS_INDEX = 7
         elif grad_pred[i] == 'Lt. Ramus-Angle':
+            name = grad_pred[i]
             CLASS_INDEX = 2
         elif grad_pred[i] == 'Rt. Ramus-Angle':
+            name = grad_pred[i]
             CLASS_INDEX = 3
         elif grad_pred[i] == 'Lt. Body':
+            name = grad_pred[i]
             CLASS_INDEX = 4
         elif grad_pred[i] == 'Rt. Body':
+            name = grad_pred[i]
             CLASS_INDEX = 5
         elif grad_pred[i] == 'Symphysis-Parasymphysis':
+            name = grad_pred[i]
             CLASS_INDEX = 8
     
         
@@ -162,7 +153,7 @@ def localization(filepath, outpath,grad_pred):
         img = tf.keras.preprocessing.image.load_img(IMAGE_PATH, target_size=(512, 512))
         img = tf.keras.preprocessing.image.img_to_array(img)
 
-        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer('Conv_1').output, model.output])
+        grad_model = tf.keras.models.Model([model.inputs], [model.get_layer('out_relu').output, model.output])
 
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(np.array([img]))
@@ -195,8 +186,10 @@ def localization(filepath, outpath,grad_pred):
         output_image = cv2.addWeighted(cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR), 0.8, cam, 0.5, 0.5)
         output = cv2.resize(output_image, (1400,800))
         im_rgb = cv2.cvtColor(output , cv2.COLOR_RGB2BGR)
-        cv2.imwrite(outpath, im_rgb)
-        #write three heatmap to server (three specific name)
+        
+        cv2.imwrite(f'{outpath1}_{name}{ext}', im_rgb)
+        data.append(f'_{name}{ext}')
+    return data
         
 
     
@@ -278,32 +271,30 @@ def upload_cases():
           #  'result': f'Uploaded to {name}-{time.time()}.'})
         #results = 'view result'
 
-        session['file'] = str(filename)
+        #session['file'] = str(filename)
     
     filename = filename
+    timestamp = datetime.utcnow()
+
     filepath = os.path.join(path, f'source{ext}')
 
-    #ควรทำเป็น3 path สำหรับ heatmap
-    gradpath = os.path.join(path, f'heatmap{ext}')
+    gradpath1 = os.path.join(path, f'heatmap')
 
+    gradpath_tmp = path+f'/heatmap'
+ 
     filepath_db = path+f'/source{ext}'
-    gradpath_db = path+f'/heatmap{ext}'
-    timestamp = datetime.utcnow()
-	
-   
-
-    res_prediction, res_name, res_prob,grad_pred = prediction(filepath)
     
-    localization(filepath, gradpath,grad_pred)
    
-   
-       
+	
+    res_prediction, res_name, res_prob,grad_pred = prediction(filepath)
+    gradpath_db = localization(filepath, gradpath1, ext, grad_pred)
+    
+    
     temp = ""
     for i in range(len(res_prediction)):
-        if i==len(res_prediction):
-            temp += res_prediction[i]
-           
-        temp += res_prediction[i] +','
+      if i==len(res_prediction):
+        temp += res_prediction[i]
+      temp += res_prediction[i] +','
 
     cur = mysql.connection.cursor()
    
@@ -324,9 +315,10 @@ def upload_cases():
     
     for i in range(len(res_prediction)):
         keep = res_prediction[i]
+        keep2 = gradpath_tmp+gradpath_db[i]
         cur.execute("INSERT INTO gradcam (Image_ID,filepath_heatmap, prediction) VALUES ('" + 
 		    str(image_ID) +  "', '" + 
-		    str(gradpath_db) + "', '" + 
+		    str(keep2) + "', '" + 
             str(keep)+"')")
 
     for i in range(8):
@@ -356,7 +348,17 @@ def get_predictioin(caseId):
         rv = cur.fetchone()
         data.append({'value': rv['prediction'] ,'viewValue':rv['prediction']})
     return make_response(jsonify(data), 200)
-   
+
+@app.route('/users/get_percent/<caseId>', methods=['GET'])
+def get_percent(caseId):
+    data = []
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT prediction, percentage FROM percent WHERE Image_ID = (%s) ",[caseId])
+    for row in range(8):
+        rv = cur.fetchone()
+        data.append({'name': rv['prediction'] ,'value': float(rv['percentage'])*100})
+        
+    return make_response(jsonify(data), 200) 
 
 @app.route('/users/get_cases', methods=['GET'])
 def get_cases():
@@ -376,20 +378,11 @@ def get_gradcam(caseId):
     data = []
     arg1 = request.args['name'];
     
-    if 'email' in session:
-        email = session.get('email')
-
     cur = mysql.connection.cursor()
-
-    ID = cur.execute("SELECT User_ID from user where Email = email")
-    
-    query =  cur.execute("SELECT A.Patient FROM image as A INNER JOIN user as B WHERE B.User_ID = (%s)",[ID])
-    cur.execute("SELECT A.filename, B.filepath_heatmap FROM image as A INNER JOIN gradcam as B ON A.Image_ID = B.Image_ID  INNER JOIN percent as C ON B.Image_ID = C.Image_ID WHERE B.Image_ID = %(caseId)s AND C.prediction = %(arg1)s",{"caseId":[caseId],"arg1":arg1})
-    #for row in cur:
-        #rv = cur.fetchone()
-        #data.append({'caseName':rv['filename'],'imageSrc':rv['filepath_heatmap']})
+        
+    cur.execute("SELECT A.filename, B.filepath_heatmap, A.Patient FROM image as A  INNER JOIN gradcam as B ON A.Image_ID = B.Image_ID  INNER JOIN percent as C ON B.Image_ID = C.Image_ID WHERE B.Image_ID = %(caseId)s AND C.prediction = %(arg1)s",{"caseId":[caseId],"arg1":arg1})
     rv = cur.fetchone()
-    data.append({'caseName':rv['filename'],'imageSrc':rv['filepath_heatmap'],'patient':query})
+    data.append({'caseName':rv['filename'],'imageSrc':rv['filepath_heatmap'],'patient':rv['Patient']})
    
     # get data from database
     return make_response(jsonify(data), 200)
@@ -401,7 +394,6 @@ def get_annotate(caseId):
     data = []
     cur = mysql.connection.cursor()
     cur.execute("SELECT filename, filepath FROM image where Image_ID = (%s)",[caseId])
-    #for row in cur:
     rv = cur.fetchone()
     heat = rv['filepath']
     data.append({'caseName':rv['filename'],'imageSrc':rv['filepath']})
