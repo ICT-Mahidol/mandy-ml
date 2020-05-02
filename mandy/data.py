@@ -1,6 +1,7 @@
 """A module containing classes and functions for data."""
 
 import os
+import random
 import pandas as pd
 from torchvision.datasets import VisionDataset
 from torchvision.datasets.folder import default_loader
