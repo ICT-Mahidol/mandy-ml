@@ -13,6 +13,7 @@ from PIL import Image
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+#from tensorflow.keras.applications.densenet import preprocess_input
 from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import Session
 from skimage.io import imread
@@ -21,7 +22,7 @@ from skimage.transform import resize
 import time
 import os
 from flask import (
-    Flask, jsonify, make_response, request, session
+    Flask, jsonify, make_response, request, session, render_template
 )
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
@@ -44,14 +45,14 @@ from tensorflow.keras.models import Model
 
 app = Flask(__name__)
 
+
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = ''
-app.config['MYSQL_DB'] = 'Mandy'
+app.config['MYSQL_DB'] = 'mandy'
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 app.config['JWT_SECRET_KEY'] = 'secret'
 
 app.config['IMAGE_DIR'] = os.path.join('static/', 'cases/')
-app.config['IMAGE_HEAT'] = os.path.join('static/','grad/')
 app.config['IMAGE_EXT'] = {'.png', '.jpg', '.jpeg'}
 
 
@@ -72,40 +73,48 @@ def prediction(filepath):
     config = ConfigProto()
     config.gpu_options.allow_growth = True  
     sess = Session(config=config)
-    json_file = open(r'dataset/model/06032020.json', 'r')
+    json_file = open(r'dataset/model/April-1587174861.5551705.json', 'r')
     loaded_model_json = json_file.read()
     json_file.close()
     model = tf.keras.models.model_from_json(loaded_model_json)
-    model.load_weights(r'dataset/model/06032020.h5')
+    model.load_weights(r'dataset/model/April-1587174861.5551705.h5')
     # print(filepath)
     # for i in range(len(filepath)):
     prediction = []
     grad_pred = []
     imagecur = imread(filepath)
-    adjustimg = cv2.GaussianBlur(imagecur,(5,5),0)
-    if len(adjustimg.shape) == 2:
-      adjustimg = np.tile(adjustimg[:, :, np.newaxis], 3)
+    if len(imagecur.shape) == 2:
+        imagecur = np.tile(imagecur[:, :, np.newaxis],3)
     
-    preprocess = preprocess_input(resize(adjustimg, (512, 512)) * 255)
+    preprocess = preprocess_input(resize(imagecur, (512, 512)) * 255)
     pred=model.predict(preprocess[np.newaxis, :, :])
-    top_3 = np.argsort(pred[0])[:-4:-1]
-    classes = np.array(df.columns[1:])
+    #top_3 = np.argsort(pred[0])[:-4:-1]
+    #classes = np.array(df.columns[1:])
+
+    predictions = 'Fracture' if pred[0][0]>0.5 else 'No Fracture'
+
     
-    prediction = "{}".format(classes[top_3[0]])+"({:.3})".format(pred[0][top_3[0]]*100)
+   # prediction = "{}".format(classes[top_3[0]])+"({:.3})".format(pred[0][top_3[0]]*100)
+    prediction = "{}".format(predictions)+"({:.3})".format(pred[0][0]*100)
+    #print(pred)
     
-    
-    for i in range(3):
+    for i in range(len(pred)):
         
-        grad_pred.append(classes[top_3[i]])
+        #grad_pred.append(classes[pred[i]])
+        grad_pred.append(predictions)
+        grad_pred = predictions
     
-    top_9 = np.argsort(pred[0])[:-10:-1]
+    #top_9 = np.argsort(pred[0])[:-10:-1]
     
     name = []
     prob = []
-    for i in range(9):
-        name.append(classes[top_9[i]])
+    for i in range(len(pred)):
+        # name.append(classes[pred[i]])
+         #prob.append(str("{:.3}".format(top_9[i])))
+         
+         name.append(predictions)
         
-        prob.append(str("{:.3}".format(pred[0][top_9[i]])))
+         prob.append(str("{:.3}".format(pred[0][0])))
         
 
     return prediction,name,prob,grad_pred
@@ -113,58 +122,60 @@ def prediction(filepath):
 
 def localization(filepath, outpath1, ext, grad_pred):
     IMAGE_PATH = filepath
-    LAYER_NAME= 'bn'
+    LAYER_NAME= 'block5_conv3'
     data = []
-    grad ={'Lt. Condyle':0,'Rt. Condyle':1,'Lt. Ramus-Angle':2,'Rt. Ramus-Angle':3,'Lt. Body':4,'Rt. Body':5,'Lt. Coronoid':6,'Rt. Coronoid':7,'Symphysis-Parasymphysis':8}
+    #grad ={'Lt. Condyle':0,'Rt. Condyle':1,'Lt. Ramus-Angle':2,'Rt. Ramus-Angle':3,'Lt. Body':4,'Rt. Body':5,'Lt. Coronoid':6,'Rt. Coronoid':7,'Symphysis-Parasymphysis':8}
     
-    for i in range(len(grad_pred)):
-      for gradName,num in grad.items():
-        if grad_pred[i] == gradName:
-            name = grad_pred[i]
-            CLASS_INDEX = num
-                 
-      json_file = open(r'dataset/model/06032020.json', 'r')
-      loaded_model_json = json_file.read()
-      json_file.close()
-      model = tf.keras.models.model_from_json(loaded_model_json)
-      model.load_weights(r'dataset/model/06032020.h5')
+    #for i in range(len(grad_pred)):
+      #for gradName,num in grad.items():
+        #if grad_pred[i] == gradName:
+           # name = grad_pred[i]
+            #CLASS_INDEX = num
+    #print(grad_pred)
+    name = grad_pred
+    CLASS_INDEX = 0          
+    json_file = open(r'dataset/model/02042020.json', 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    model = tf.keras.models.model_from_json(loaded_model_json)
+    model.load_weights(r'dataset/model/02042020.h5')
 
-      img = tf.keras.preprocessing.image.load_img(IMAGE_PATH, target_size=(512, 512))
-      img = tf.keras.preprocessing.image.img_to_array(img)
+    img = tf.keras.preprocessing.image.load_img(IMAGE_PATH, target_size=(512, 512))
+    img = tf.keras.preprocessing.image.img_to_array(img)
 
-      grad_model = tf.keras.models.Model([model.inputs], [model.get_layer('out_relu').output, model.output])
+    grad_model = tf.keras.models.Model([model.inputs], [model.get_layer('out_relu').output, model.output])
 
-      with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(np.array([img]))
-        loss = predictions[:, CLASS_INDEX]
+    with tf.GradientTape() as tape:
+       conv_outputs, predictions = grad_model(np.array([img]))
+       loss = predictions[:, CLASS_INDEX]
 
 
-      output = conv_outputs[0]
-      grads =  tape.gradient(loss, conv_outputs)[0]
+    output = conv_outputs[0]
+    grads =  tape.gradient(loss, conv_outputs)[0]
 
-      guided_grads = tf.cast(output > 0, 'float32') * tf.cast(grads > 0, 'float32') * grads
+    guided_grads = tf.cast(output > 0, 'float32') * tf.cast(grads > 0, 'float32') * grads
 
-      weights = tf.reduce_mean(guided_grads, axis=(0, 1))
+    weights = tf.reduce_mean(guided_grads, axis=(0, 1))
 
-      cam = np.ones(output.shape[0: 2], dtype = np.float32)
+    cam = np.ones(output.shape[0: 2], dtype = np.float32)
 
-      for i, w in enumerate(weights):
+    for i, w in enumerate(weights):
         cam += w * output[:, :, i]
 
-      cam = cv2.resize(cam.numpy(), (512, 512))
-      cam = np.maximum(cam, 0)
-      r = cam.max() - cam.min()
-      if r == 0:
+    cam = cv2.resize(cam.numpy(), (512, 512))
+    cam = np.maximum(cam, 0)
+    r = cam.max() - cam.min()
+    if r == 0:
         r = 1;
-      heatmap = (cam - cam.min()) / r
-      cam = cv2.applyColorMap(np.uint8(255*heatmap), cv2.COLORMAP_JET)
+    heatmap = (cam - cam.min()) / r
+    cam = cv2.applyColorMap(np.uint8(255*heatmap), cv2.COLORMAP_JET)
 
-      output_image = cv2.addWeighted(cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR), 0.8, cam, 0.5, 0.5)
-      output = cv2.resize(output_image, (1400,800))
-      im_rgb = cv2.cvtColor(output , cv2.COLOR_RGB2BGR)
+    output_image = cv2.addWeighted(cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR), 0.8, cam, 0.5, 0.5)
+    output = cv2.resize(output_image, (1400,800))
+    im_rgb = cv2.cvtColor(output , cv2.COLOR_RGB2BGR)
         
-      cv2.imwrite(f'{outpath1}_{name}{ext}', im_rgb)
-      data.append(f'_{name}{ext}')
+    cv2.imwrite(f'{outpath1}_{name}{ext}', im_rgb)
+    data.append(f'_{name}{ext}')
     return data
         
 
@@ -192,8 +203,8 @@ def localization(filepath, outpath1, ext, grad_pred):
 def upload_annotate():
     
     Image_ID = request.get_json()['ID']
-    filepath = request.get_json()['Name']
-    fracture = request.get_json()['File']
+    fracture = request.get_json()['Name']
+    filepath = request.get_json()['File']
 
     if 'email' in session:
         email = session.get('email')
@@ -276,20 +287,23 @@ def upload_cases():
 
     query = cur.execute("SELECT User_ID from user where Email = email")
     
+    
     cur.execute("INSERT INTO Image (User_ID,filename, timestamp, filepath, prediction) VALUES ('" + 
-		    str(query) +  "', '" + 
+        str(query) +  "', '" + 
 		    str(filename) + "', '" + 
 		    str(timestamp) + "', '" + 
 		    str(filepath_db ) + "', '" +
-            str(res_prediction)+"')")
+           str(res_prediction)+"')")
    
    
     image_ID = cur.execute("SELECT Image_ID FROM image where filename = filename")
     
-    for i in range(len(grad_pred)):
-        keep = grad_pred[i]
-        keep2 = gradpath_tmp+gradpath_db[i]
-        cur.execute("INSERT INTO gradcam (Image_ID,filepath_heatmap, prediction) VALUES ('" + 
+    
+    #for i in range(len(grad_pred)):
+    keep = grad_pred
+    keep2 = gradpath_tmp+gradpath_db[0]
+    print(keep2)
+    cur.execute("INSERT INTO gradcam (Image_ID,filepath_heatmap, prediction) VALUES ('" + 
 		    str(image_ID) +  "', '" + 
 		    str(keep2) + "', '" + 
             str(keep)+"')")
@@ -316,7 +330,7 @@ def get_predictioin(caseId):
     for row in cur:
        rv = cur.fetchone()
        prediction = rv['prediction'].split(",")
-       for i in range(3):
+       for i in range(len(prediction)):
             data.append({'value': prediction[i],'viewValue':prediction[i]})
     return make_response(jsonify(data), 200)
 
@@ -345,6 +359,15 @@ def get_cases():
     
     return make_response(jsonify(data), 200)
 
+@app.route('/users/get_image/<caseId>', methods=['GET'])
+def get_image(caseId):
+    data = []
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT * FROM Image WHERE Image_ID = %(caseId)s",{"caseId":[caseId]})
+    rv = cur.fetchone()
+    data.append({'caseName': rv['filename'],'img': rv['filepath']})
+    return make_response(jsonify(data), 200)
+
 @app.route('/users/get_gradcam/<caseId>', methods=['GET'])
 def get_gradcam(caseId):
     data = []
@@ -355,7 +378,7 @@ def get_gradcam(caseId):
     cur.execute("SELECT A.filename, B.filepath_heatmap, A.Patient FROM image as A  INNER JOIN gradcam as B ON A.Image_ID = B.Image_ID  WHERE B.Image_ID = %(caseId)s AND B.prediction = %(arg1)s",{"caseId":[caseId],"arg1":arg1})
      
     rv = cur.fetchone()
-    data.append({'caseName':rv['filename'],'imageSrc':rv['filepath_heatmap'],'patient':rv['Patient']})
+    data.append({'caseName':rv['filename'],'imageSrc':rv['filepath_heatmap']})
    
     # get data from database
     return make_response(jsonify(data), 200)
@@ -426,7 +449,7 @@ def login():
 def status():
     return 'mandy server is running.'
 
-
 if __name__ == '__main__':
     app.run(debug=True)
+    #app.run()
     app.secret_key = 'MANDY'

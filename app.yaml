@@ -1,0 +1,30 @@
+runtime: python27
+api_version: 1
+threadsafe: true
+entrypoint: gunicorn -b :$PORT main:app
+
+libraries:
+- name: ssl
+  version: latest
+- name: MySQLdb
+  version: latest
+
+# [START handlers]
+handlers:
+- url: /static
+  static_dir: static
+- url: /.*
+  script: main.app
+# [END handlers]
+
+beta_settings:
+  cloud_sql_instances: dot-operating-authority:us-west2:dot-operating-instance
+  # cloud_sql_instances: lookingbus-alpha:us-west2:sql-instance-alpha
+
+env_variables:
+  SECRET_KEY: 'secret123'
+  OAUTHLIB_INSECURE_TRANSPORT: '1'
+  OAUTHLIB_RELAX_TOKEN_SCOPE: '1'
+
+#includes:
+#- credentials.yaml
